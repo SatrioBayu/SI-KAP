@@ -32,6 +32,10 @@ class SpmRepository {
   async updateStatus(spmId, dataUpdate, options = {}) {
     return Spm.update(dataUpdate, { where: { id: spmId }, ...options });
   }
+
+  async update(spmId, dataUpdate, options = {}) {
+    return Spm.update(dataUpdate, { where: { id: spmId }, ...options });
+  }
 }
 
 module.exports = new SpmRepository();

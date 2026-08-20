@@ -2,47 +2,33 @@
 const { Model } = require("sequelize");
 
 module.exports = (sequelize, DataTypes) => {
-  class RiwayatStatus extends Model {
+  class Ikpa extends Model {
     static associate(models) {
-      RiwayatStatus.belongsTo(models.Spm, { foreignKey: "spm_id", as: "spm" });
-      RiwayatStatus.belongsTo(models.User, {
-        foreignKey: "user_id",
-        as: "user",
+      Ikpa.belongsTo(models.User, {
+        foreignKey: "dibuat_oleh",
+        as: "approver",
       });
     }
   }
-  RiwayatStatus.init(
+  Ikpa.init(
     {
       id: {
         type: DataTypes.UUID,
         primaryKey: true,
       },
-      spm_id: DataTypes.UUID,
-      user_id: DataTypes.UUID,
-      status_dari: DataTypes.ENUM(
-        "draft",
-        "pengecekkan",
-        "verifikasi",
-        "disetujui",
-        "ditolak",
-      ),
-      status_ke: DataTypes.ENUM(
-        "draft",
-        "pengecekkan",
-        "verifikasi",
-        "disetujui",
-        "ditolak",
-      ),
-      keterangan: DataTypes.TEXT,
+      tahun: DataTypes.SMALLINT,
+      bulan: DataTypes.TINYINT,
+      capaian_ikpa: DataTypes.DECIMAL(5, 2),
+      dibuat_oleh: DataTypes.UUID,
     },
     {
       sequelize,
-      modelName: "RiwayatStatus",
-      tableName: "riwayat_status",
+      modelName: "Ikpa",
+      tableName: "ikpa",
       underscored: true,
       createdAt: "created_at",
-      updatedAt: false,
+      updatedAt: "updated_at",
     },
   );
-  return RiwayatStatus;
+  return Ikpa;
 };

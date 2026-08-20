@@ -20,6 +20,12 @@ router.post(
   roleMiddleware("maker"),
   spmController.ajukanPengecekan,
 );
+router.patch(
+  "/:id",
+  roleMiddleware("maker"),
+  upload.array("file", 10),
+  spmController.updateDraft,
+);
 
 // Checker & Approver — validasi per dokumen, lanjutkan proses, tolak
 router.patch(

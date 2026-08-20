@@ -4,7 +4,7 @@ const { sequelize } = require("../models");
 const spmRepository = require("../repositories/spmRepository");
 const spmDokumenRepository = require("../repositories/spmDokumenRepository");
 const riwayatStatusRepository = require("../repositories/riwayatStatusRepository");
-const uploadToCloudinary = require("../utils/uploadToCloudinary");
+const { uploadToCloudinary } = require("../utils/uploadToCloudinary");
 
 function buatError(pesan, statusCode) {
   const error = new Error(pesan);
@@ -54,7 +54,7 @@ class SpmService {
         const daftarDokumen = [];
         for (let i = 0; i < files.length; i++) {
           const hasilUpload = await uploadToCloudinary(files[i].buffer, {
-            public_id: `${spmId}-${Date.now()}-${i}`,
+            public_id: `${spmId}-${Date.now()}-${i}.pdf`,
           });
 
           daftarDokumen.push({
@@ -66,6 +66,134 @@ class SpmService {
         }
         await spmDokumenRepository.bulkCreate(daftarDokumen, { transaction });
       }
+
+      await transaction.commit();
+      return spmRepository.findById(spmId);
+    } catch (err) {
+      await transaction.rollback();
+      throw err;
+    }
+  }
+
+  // Maker mengedit SPM (hanya saat status draft ATAU ditolak).
+  // Bisa mengubah tipe_dipa/jenis_spm, menambah dokumen baru, dan menghapus
+  // dokumen lama. Dokumen yang tetap ada tanda validasinya di-reset supaya
+  // Checker/Approver meninjau ulang, karena isi berkas telah berubah.
+  async updateDraft(spmId, user, payload, files) {
+    const spm = await spmRepository.findById(spmId);
+    if (!spm) {
+      throw buatError("SPM tidak ditemukan", 404);
+    }
+
+    if (spm.maker_id !== user.id) {
+      throw buatError("Anda tidak berhak mengubah SPM ini", 403);
+    }
+
+    if (!["draft", "ditolak"].includes(spm.status)) {
+      throw buatError(
+        "SPM hanya dapat diubah pada status draft atau ditolak",
+        400,
+      );
+    }
+
+    const { tipe_dipa, jenis_spm, nama_dokumen, hapus_dokumen } = payload;
+
+    const namaDokumenArray = Array.isArray(nama_dokumen)
+      ? nama_dokumen
+      : nama_dokumen
+        ? [nama_dokumen]
+        : [];
+
+    const dokumenIdHapus = Array.isArray(hapus_dokumen)
+      ? hapus_dokumen
+      : hapus_dokumen
+        ? [hapus_dokumen]
+        : [];
+
+    if (files && files.length > 0 && namaDokumenArray.length !== files.length) {
+      throw buatError(
+        "Jumlah nama dokumen dan file yang diupload tidak sesuai",
+        400,
+      );
+    }
+
+    for (const dokId of dokumenIdHapus) {
+      const ditemukan = spm.dokumen.some((d) => d.id === dokId);
+      if (!ditemukan) {
+        throw buatError(
+          "Salah satu dokumen yang akan dihapus tidak ditemukan pada SPM ini",
+          400,
+        );
+      }
+    }
+
+    const transaction = await sequelize.transaction();
+    try {
+      const dataUpdate = {};
+      if (tipe_dipa) dataUpdate.tipe_dipa = tipe_dipa;
+      if (jenis_spm) dataUpdate.jenis_spm = jenis_spm;
+      if (Object.keys(dataUpdate).length > 0) {
+        await spmRepository.update(spmId, dataUpdate, { transaction });
+      }
+
+      for (const dokId of dokumenIdHapus) {
+        await spmDokumenRepository.delete(dokId, { transaction });
+      }
+
+      if (files && files.length > 0) {
+        const dokumenBaru = [];
+        for (let i = 0; i < files.length; i++) {
+          const hasilUpload = await uploadToCloudinary(files[i].buffer, {
+            public_id: `${spmId}-${Date.now()}-${i}.pdf`,
+          });
+          dokumenBaru.push({
+            id: uuidv4(),
+            spm_id: spmId,
+            nama_dokumen: namaDokumenArray[i],
+            file_path: hasilUpload.secure_url,
+          });
+        }
+        await spmDokumenRepository.bulkCreate(dokumenBaru, { transaction });
+      }
+
+      // dokumen lama yang tetap dipertahankan perlu ditinjau ulang
+      const dokumenTersisa = spm.dokumen.filter(
+        (d) => !dokumenIdHapus.includes(d.id),
+      );
+      for (const dok of dokumenTersisa) {
+        if (
+          dok.status_checker !== "belum_dicek" ||
+          dok.status_approver !== "belum_dicek"
+        ) {
+          await spmDokumenRepository.update(
+            dok.id,
+            {
+              status_checker: "belum_dicek",
+              dicek_checker_oleh: null,
+              dicek_checker_at: null,
+              status_approver: "belum_dicek",
+              dicek_approver_oleh: null,
+              dicek_approver_at: null,
+            },
+            { transaction },
+          );
+        }
+      }
+
+      await riwayatStatusRepository.create(
+        {
+          id: uuidv4(),
+          spm_id: spmId,
+          user_id: user.id,
+          status_dari: spm.status,
+          status_ke: spm.status,
+          keterangan:
+            spm.status === "ditolak"
+              ? "SPM diperbarui oleh Maker setelah revisi atas penolakan"
+              : "SPM (draft) diperbarui oleh Maker",
+        },
+        { transaction },
+      );
 
       await transaction.commit();
       return spmRepository.findById(spmId);

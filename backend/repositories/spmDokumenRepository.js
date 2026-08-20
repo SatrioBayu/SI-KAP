@@ -17,6 +17,10 @@ class SpmDokumenRepository {
   async update(id, dataUpdate, options = {}) {
     return SpmDokumen.update(dataUpdate, { where: { id }, ...options });
   }
+
+  async delete(id, options = {}) {
+    return SpmDokumen.destroy({ where: { id }, ...options });
+  }
 }
 
 module.exports = new SpmDokumenRepository();
